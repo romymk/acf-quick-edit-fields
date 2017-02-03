@@ -56,6 +56,7 @@ class ACFToQuickEdit {
 			add_action( 'admin_init' , array( $this, 'init_columns' ) );
 			add_action( 'load-admin-ajax.php' , array( $this, 'init_columns' ) );
 			add_action( 'wp_ajax_get_acf_post_meta' , array( $this, 'ajax_get_acf_post_meta' ) );
+			add_action( 'load-edit.php' , array( $this, 'enqueue_assets' ) );
 		} else if ( class_exists( 'acf' ) && current_user_can( 'activate_plugins' ) ) {
 			add_action( 'admin_notices', array( $this, 'print_acf_free_notice' ) );
 		}
@@ -103,7 +104,7 @@ class ACFToQuickEdit {
 			'oembed'			=> array( 'column' => false,	'quickedit' => false,	'bulkedit' => false ),
 			'image'				=> array( 'column' => true,		'quickedit' => false,	'bulkedit' => false ), 
 			'file'				=> array( 'column' => true,		'quickedit' => false,	'bulkedit' => false ), 
-			'gallery'			=> array( 'column' => false,	'quickedit' => false,	'bulkedit' => false ),
+			'gallery'			=> array( 'column' => true,		'quickedit' => false,	'bulkedit' => false ),
 
 			// Choice
 			'select'			=> array( 'column' => true,		'quickedit' => true,	'bulkedit' => true ), 
@@ -136,8 +137,6 @@ class ACFToQuickEdit {
 		/**
 		 * Filter field type support of ACF Quick Edit Fields
 		 *
-		 * @since 2.5.0
-		 *
 		 * @param array $fields		An associative array of field type support having the ACF field name as keys 
 		 *							and an array of supported fetaures as values. 
 		 *							Features are 'column', 'quickedit' and 'bulkedit'.
@@ -161,8 +160,9 @@ class ACFToQuickEdit {
 	 * @filter 'acf/format_value/type=radio'
 	 */
 	function format_radio( $value, $post_id, $field ) {
-		if ( ( $nice_value = $field['choices'][$value]) )
+		if ( ( $nice_value = $field['choices'][$value]) ) {
 			return $nice_value;
+		}
 		return $value;
 	}
 
@@ -257,10 +257,17 @@ class ACFToQuickEdit {
 
 		if ( $pagenow == 'upload.php' ) {
 			$post_type = 'attachment';
-			$field_groups = acf_get_field_groups( apply_filters( 'acf_quick_edit_fields_group_filter', array( 'attachment' => 'all|image' ) ) );
+			$conditions = array( 'attachment' => 'all|image' );
 		} else {
-			$field_groups = acf_get_field_groups( apply_filters( 'acf_quick_edit_fields_group_filter', array( 'post_type' => $post_type ) ) );
+			$conditions = array( 'post_type' => $post_type );
 		}
+
+		/**
+		 * Getting the Field Groups to be displayed in posts list table
+		 *
+		 * @param array $conditions	Field group conditions passed to `acf_get_field_groups()`
+		 */
+		$field_groups = acf_get_field_groups( apply_filters( 'acf_quick_edit_fields_group_filter', $conditions ) );
 
 		// register column display
 		foreach ( $field_groups as $field_group ) {
@@ -301,7 +308,50 @@ class ACFToQuickEdit {
 			add_filter( $display_hook,	array( $this, 'display_field_column' ), 10, 2 );
 		}
 		
+		if ( count( $this->column_fields ) ) {
+			$has_thumbnail		= false;
+			foreach ( $this->column_fields as $field ) {
+				if ( $field['type'] == 'image' || $field['type'] == 'gallery' ) {
+					$has_thumbnail = true;
+					break;
+				}
+			}
+
+		}
 		
+		// register quickedit
+		if ( count( $this->quickedit_fields ) ) {
+			// enqueue scripts ...
+			add_action( 'quick_edit_custom_box',  array( $this, 'display_quick_edit' ), 10, 2);
+			add_action( 'save_post', array( $this, 'quickedit_save_acf_meta' ) );
+
+
+		}
+		
+		// register bulkedit
+		if ( count( $this->bulkedit_fields ) ) {
+			add_action( 'bulk_edit_custom_box', array( $this , 'display_bulk_edit' ), 10, 2 );
+		}
+	}
+
+	/**
+	 * @action 'load-edit.php'
+	 */
+	function enqueue_assets() {
+		if ( count( $this->column_fields ) ) {
+			$has_thumbnail		= false;
+			foreach ( $this->column_fields as $field ) {
+				if ( $field['type'] == 'image' || $field['type'] == 'gallery' ) {
+					$has_thumbnail = true;
+					break;
+				}
+			}
+
+			if ( $has_thumbnail ) {
+				wp_enqueue_script( 'acf-qef-thumbnail-col', plugins_url( 'js/thumbnail-col.js', dirname( __FILE__ ) ), array( 'inline-edit-post' ), null, true );
+				wp_enqueue_style( 'acf-qef-thumbnail-col', plugins_url( 'css/thumbnail-col.css', dirname( __FILE__ ) ) );
+			}
+		}
 		
 		// register quickedit
 		if ( count( $this->quickedit_fields ) ) {
@@ -316,8 +366,6 @@ class ACFToQuickEdit {
 					$has_colorpicker = true;
 				}
 			}
-			add_action( 'quick_edit_custom_box',  array( $this, 'display_quick_edit' ), 10, 2);
-			add_action( 'save_post', array( $this, 'quickedit_save_acf_meta' ) );
 
 			// ... if necessary
 			if ( $has_datepicker ) {
@@ -337,12 +385,8 @@ class ACFToQuickEdit {
 			wp_enqueue_script( 'acf-quick-edit', plugins_url( 'js/acf-quickedit.js', dirname( __FILE__ ) ), array( 'inline-edit-post' ), null, true );
 		}
 		
-		// register bulkedit
-		if ( count( $this->bulkedit_fields ) ) {
-			add_action( 'bulk_edit_custom_box', array( $this , 'display_bulk_edit' ), 10, 2 );
-		}
 	}
-	
+
 	/**
 	 * @action 'wp_ajax_get_acf_post_meta'
 	 */
@@ -407,6 +451,9 @@ class ACFToQuickEdit {
 		$this->_wp_column_weights = array_map( array( $this, '_mul_100' ) , array_flip( array_keys( $columns ) ) );
 
 		foreach ( $this->column_fields as $field_slug => $field ) {
+			if ( in_array( $field['type'], array('image','gallery'))) {
+				$field_slug .= '-qef-thumbnail';
+			}
 			$columns[ $field_slug ] = $field['label'];
 		}
 		uksort($columns, array( $this, '_sort_columns_by_weight' ));
@@ -428,6 +475,7 @@ class ACFToQuickEdit {
 	}
 
 	private function _get_column_weight( $column_slug ) {
+		$column_slug = str_replace('-qef-thumbnail','',$column_slug);
 		if ( isset( $this->_wp_column_weights[ $column_slug ] ) ) {
 			return intval( $this->_wp_column_weights[ $column_slug ] );
 		} else if ( isset( $this->column_fields[ $column_slug ]['show_column_weight'] ) && '' !==  $this->column_fields[ $column_slug ]['show_column_weight'] ) {
@@ -441,7 +489,8 @@ class ACFToQuickEdit {
 	 * @filter manage_media_custom_column
 	 * @filter manage_{$post_type}_posts_custom_column
 	 */
-	function display_field_column( $column , $post_id ) {
+	function display_field_column( $wp_column_slug , $post_id ) {
+		$column = str_replace('-qef-thumbnail','', $wp_column_slug );
 		if ( isset( $this->column_fields[$column] ) ) {
 			$field = $this->column_fields[$column];
 			switch ( $field['type'] ) {
@@ -465,6 +514,27 @@ class ACFToQuickEdit {
 							// Image field is a url
 							echo '<img src="' . $image_id . '" width="80" height="80" />';
 						};
+					}
+					break;
+				case 'gallery':
+					/**
+					 * Filter number of images to be displayed in Gallery Column
+					 *
+					 * @param int $max_images	Maximum Number of images
+					 */
+					if ( $max_images = apply_filters( 'acf_quick_edit_fields_gallery_col_max_images', 15 ) ) {
+						$images = get_field( $field['key'] );
+						if ( $images ) {
+							$class = count($images) > 1 ? 'acf-qef-gallery-col' : 'acf-qef-image-col';
+							?><div class="<?php echo $class ?>"><?php
+							foreach ( array_values( $images ) as $i => $image) {
+								if ( $i >= $max_images ) {
+									break;
+								}
+								echo wp_get_attachment_image( $image['id'] , array(80, 80) );
+							}
+							?></div><?php
+						}
 					}
 					break;
 				case 'select':
@@ -570,12 +640,14 @@ class ACFToQuickEdit {
 	    return $defaults; 
 	} 
 
-	function display_quick_edit( $column, $post_type ) {
+	function display_quick_edit( $wp_column_slug, $post_type ) {
+		$column = str_replace('-qef-thumbnail','', $wp_column_slug );
 		if ( isset($this->quickedit_fields[$column]) && $field = $this->quickedit_fields[$column] ) {
 			$this->display_quickedit_field( $column, $post_type , $field  );
 		}
 	}
-	function display_bulk_edit( $column, $post_type ) {
+	function display_bulk_edit( $wp_column_slug, $post_type ) {
+		$column = str_replace('-qef-thumbnail','', $wp_column_slug );
 		if ( isset($this->bulkedit_fields[$column]) && $field = $this->bulkedit_fields[$column] ) {
 			$this->display_quickedit_field( $column, $post_type , $field  );
 		}
