@@ -116,7 +116,7 @@ class ACFToQuickEdit {
 			'post_object'		=> array( 'column' => true,		'quickedit' => false,	'bulkedit' => false ), 
 			'page_link'			=> array( 'column' => true,		'quickedit' => false,	'bulkedit' => false ),
 			'relationship'		=> array( 'column' => true,		'quickedit' => false,	'bulkedit' => false ), 
-			'taxonomy'			=> array( 'column' => false,	'quickedit' => false,	'bulkedit' => false ),
+			'taxonomy'			=> array( 'column' => true,		'quickedit' => false,	'bulkedit' => false ),
 			'user'				=> array( 'column' => false,	'quickedit' => false,	'bulkedit' => false ),
 
 			// jQuery
@@ -379,6 +379,7 @@ class ACFToQuickEdit {
 			}
 
 			if ( $has_colorpicker ) {
+				wp_enqueue_style( 'wp-color-picker' );
 				wp_enqueue_script( 'wp-color-picker' );
 			}
 
@@ -573,6 +574,21 @@ class ACFToQuickEdit {
 					?><pre><?php
 						the_field($field['key']);
 					?></pre><?php
+					break;
+				case 'taxonomy':
+					$value = get_field($field['key']);
+					if ( $value ) {
+						$term_names = array();
+						foreach ( (array) $value as $i => $term ) {
+							if ( $field['return_format'] === 'id' ) {
+								$term = get_term($term, $field['taxonomy']);
+							}
+							$term_names[] = $term->name;
+						}
+						echo implode( ', ', $term_names );
+					} else {
+						_e('(No value)', 'acf-quick-edit-fields');
+					}
 					break;
 				case 'relationship':
 				case 'post_object':
