@@ -317,7 +317,13 @@ class ACFToQuickEdit {
 				}
 			}
 
+/*
+			if ( $has_thumbnail ) {
+				wp_enqueue_script( 'acf-qef-thumbnail-col', plugins_url( 'js/thumbnail-col.js', dirname( __FILE__ ) ), array( 'inline-edit-post' ), null, true );
+			}
+*/
 		}
+		wp_enqueue_style( 'acf-qef-thumbnail-col', plugins_url( 'css/thumbnail-col.css', dirname( __FILE__ ) ) );
 		
 		// register quickedit
 		if ( count( $this->quickedit_fields ) ) {
@@ -346,13 +352,8 @@ class ACFToQuickEdit {
 					break;
 				}
 			}
-
-			if ( $has_thumbnail ) {
-				wp_enqueue_script( 'acf-qef-thumbnail-col', plugins_url( 'js/thumbnail-col.js', dirname( __FILE__ ) ), array( 'inline-edit-post' ), null, true );
-				wp_enqueue_style( 'acf-qef-thumbnail-col', plugins_url( 'css/thumbnail-col.css', dirname( __FILE__ ) ) );
-			}
 		}
-		
+
 		// register quickedit
 		if ( count( $this->quickedit_fields ) ) {
 			// enqueue scripts ...
@@ -383,7 +384,8 @@ class ACFToQuickEdit {
 				wp_enqueue_script( 'wp-color-picker' );
 			}
 
-			wp_enqueue_script( 'acf-quick-edit', plugins_url( 'js/acf-quickedit.js', dirname( __FILE__ ) ), array( 'inline-edit-post' ), null, true );
+			wp_enqueue_style( 'acf-quick-edit', plugins_url( 'css/acf-quickedit.css', dirname( __FILE__ ) ) );
+			wp_enqueue_script( 'acf-quick-edit', plugins_url( 'js/acf-quickedit.min.js', dirname( __FILE__ ) ), array( 'inline-edit-post' ), null, true );
 		}
 		
 	}
@@ -624,6 +626,12 @@ class ACFToQuickEdit {
 						echo '<code>********</code>';
 					}
 					break;
+				case 'date_picker':
+				case 'time_picker':
+				case 'date_time_picker':
+					$val = get_field( $field['key'], $post_id, false );
+					echo acf_format_date( $val, $field['display_format'] );
+					break;
 				default:
 					the_field( $field['key'] );
 					break;
@@ -659,20 +667,21 @@ class ACFToQuickEdit {
 	function display_quick_edit( $wp_column_slug, $post_type ) {
 		$column = str_replace('-qef-thumbnail','', $wp_column_slug );
 		if ( isset($this->quickedit_fields[$column]) && $field = $this->quickedit_fields[$column] ) {
-			$this->display_quickedit_field( $column, $post_type , $field  );
+			$this->display_quickedit_field( $column, $post_type , $field, 'quick' );
 		}
 	}
 	function display_bulk_edit( $wp_column_slug, $post_type ) {
 		$column = str_replace('-qef-thumbnail','', $wp_column_slug );
 		if ( isset($this->bulkedit_fields[$column]) && $field = $this->bulkedit_fields[$column] ) {
-			$this->display_quickedit_field( $column, $post_type , $field  );
+			$this->display_quickedit_field( $column, $post_type , $field, 'bulk' );
 		}
 	}
 
-	function display_quickedit_field( $column, $post_type , $field ) {
+	function display_quickedit_field( $column, $post_type , $field, $mode ) {
+
 		?>
 		<fieldset class="inline-edit-col-left inline-edit-<?php echo $post_type ?>">
-			<div class="inline-edit-col column-<?php echo $column; ?>">
+			<div class="acf-field inline-edit-col column-<?php echo $column; ?>" data-key="<?php echo $field['key'] ?>">
 				<label class="inline-edit-group">
 					<span class="title"><?php echo $field['label']; ?></span>
 					<span class="input-text-wrap"><?php
@@ -684,24 +693,27 @@ class ACFToQuickEdit {
 						switch ($field['type']) {
 
 							case 'checkbox':
-								$input_atts += array(
-									'class' => 'acf-quick-edit',
-									'id' => $this->post_field_prefix . $column,
+								?><ul class="acf-checkbox-list" data-acf-field-key="<?php echo $field['key'] ?>"><?php
+								$input_atts		+= array(
+									'class'	=> 'acf-quick-edit',
+									'id'	=> $this->post_field_prefix . $column,
 								);
-								$field['value'] = acf_get_array($field['value'], false);
-								$input_atts['name'] .= '[]';
-								foreach($field['choices'] as $value => $label) {
+								$field['value']	= acf_get_array( $field['value'], false );
+								foreach ( $field['choices'] as $value => $label ) {
 									$atts = array(
-										'type' => 'checkbox',
-										'value' => $value ) + $input_atts;
-									if( in_array($value, $field['value']) ) {
+										'data-acf-field-key'	=> $field['key'],
+										'type'					=> 'checkbox',
+										'value'					=> $value,
+										'name'					=> $this->post_field_prefix . $column . '[]',
+										'id'					=> $this->post_field_prefix . $column . '-'.$value,
+									);
+
+									if ( in_array( $value, $field['value'] ) ) {
 										$atts['checked'] = 'checked';
-									} else {
-										$all_checked = false;
 									}
-									$atts['id'] .= '-'.$value;
-									echo '<label><input ' . acf_esc_attr( $atts ) . '/>' . $label . '</label>';
+									echo '<li><label><input ' . acf_esc_attr( $atts ) . '/>' . $label . '</label></li>';
 								}
+								?></ul><?php
 								break;
 
 							case 'select':
@@ -844,7 +856,20 @@ class ACFToQuickEdit {
 								echo '<input '. acf_esc_attr( $input_atts ) .' />';
 								break;
 
+							case 'color_picker':
+								$input_atts += array(
+									'class'	=> 'wp-color-picker acf-quick-edit acf-quick-edit-'.$field['type'],
+									'type'	=> 'text', 
+								);
+								echo '<input '. acf_esc_attr( $input_atts ) .' />';
+								break;
+
 							default:
+
+								do_action( 'acf_quick_edit_field_' . $field['type'], $field, $column, $post_type  );
+								if ( ! apply_filters( 'acf_quick_edit_render_' . $field['type'], true, $field, $column, $post_type ) ) {
+									break;
+								}
 								$input_atts += array(
 									'class'	=> 'acf-quick-edit acf-quick-edit-'.$field['type'],
 									'type'	=> 'text', 
@@ -862,18 +887,33 @@ class ACFToQuickEdit {
 	 *	@action save_post
 	 */
 	function quickedit_save_acf_meta( $post_id ) {
+
 		$is_quickedit = is_admin() && defined( 'DOING_AJAX' ) && DOING_AJAX;
+
 		if ( ! current_user_can( 'edit_post', $post_id ) ) {
 			return;
 		}
+
 		foreach ( $this->quickedit_fields as $field_name => $field ) {
-			$do_update = $is_quickedit 
-				? isset( $_REQUEST[ $this->post_field_prefix . $field['name'] ] )
-				: isset( $_REQUEST[ $this->post_field_prefix . $field['name'] ] ) && ! empty( $_REQUEST[ $this->post_field_prefix . $field['name'] ] );
+			switch ( $field['type'] ) {
+				case 'checkbox':
+					$do_update	= true;
+					$value		= isset( $_REQUEST[ $this->post_field_prefix . $field['name'] ] ) 
+									? $_REQUEST[ $this->post_field_prefix . $field['name'] ] 
+									: null;
+					break;
+				default:
+					$do_update	= $is_quickedit 
+									? isset( $_REQUEST[ $this->post_field_prefix . $field['name'] ] )
+									: isset( $_REQUEST[ $this->post_field_prefix . $field['name'] ] ) && ! empty( $_REQUEST[ $this->post_field_prefix . $field['name'] ] );
+					$value		= $_REQUEST[ $this->post_field_prefix . $field['name'] ];
+					break;
+			}
 			if ( $do_update ) {
-				update_field( $field['name'], $_REQUEST[ $this->post_field_prefix . $field['name'] ], $post_id );
+				update_field( $field['name'], $value, $post_id );
 			}
 		}
+//		exit();
 	}
 }
 
